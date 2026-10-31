@@ -1,0 +1,84 @@
+PHASE-2 Q&A BRAIN -- ASCII ARCHITECTURE (Phase-1 retrieval -> Phase-3 handoff)
+
++------------------------------------------------+
+| INPUT: question, top_k, threshold              |
++------------------------------------------------+
+                        |
+                        v
+===== PHASE-1 BOUNDARY (input) ===================================================================
++------------------------------------------------+
+| retrieve(question, top_k)                      |
+| [recipe4_retrieve - reused, not rewritten]     |
+| reads: (FAISS index) (chunks_meta.json)        |
+| returns: [{rank, score, source, page, text}]   |
++------------------------------------------------+
+                        |
+                        v
++------------------------------------------------+
+| _enrich: attach chunk_id (best effort)         |
++------------------------------------------------+
+                        |
+                        v
++------------------------------------------------+      +----------------------------------------+
+| SCORE GATE                                     |      | QAResult: NOT FOUND                    |
+| no results OR top_score below threshold ?      |-YES->| answerable=False used_context=False    |
++------------------------------------------------+      | LLM is NOT called                      |-+
+                        | NO                            | sources=[]  confidence=low             | |
+                        v                               +----------------------------------------+ |
++------------------------------------------------+                                                 |
+| format_context: header-label each passage      |                                                 |
+| and neutralise <context> tags (data)           |                                                 |
+| build_prompt: system + human turns             |                                                 |
+| + parser.get_format_instructions()             |                                                 |
++------------------------------------------------+                                                 |
+                        |                                                                          |
+                        v                                                                          |
++------------------------------------------------+      +----------------------------------------+ |
+| build_llm() lazily; Gemini temp=0.2            |      | ERROR EXIT [E]                         | |
+| default gemini-flash-latest (RAG_LLM_MODEL)    |-FAIL>| CLI exits with code 1                  | |
+| _invoke_llm: backoff on 429/5xx                |      | (LLM failed 4 attempts)                | |
+| max 4 attempts, then raise                     |      +----------------------------------------+ |
++------------------------------------------------+                                                 |
+                        |                                                                          |
+                        v                                                                          |
++------------------------------------------------+      +----------------------------------------+ |
+| PARSER: PydanticOutputParser                   |      | RETRY ONCE: send parse error back      | |
+| schema JSON valid (LLMAnswer) ?                |--NO->| (max 1 retry, no more)                 | |
++------------------------------------------------+      +----------------------------------------+ |
+                        | YES                                               |                      |
+                        v                                                   v                      |
++------------------------------------------------+      +----------------------------------------+ |
+| CITATION VALIDATOR                             |      | LLM CALL 2 (same backoff, temp 0.2)    | |
+| keeps only (source, page) pairs found in       |      | if it fails 4x -> ERROR EXIT [E]       | |
+| the retrieved results (Phase-1 output)         |      +----------------------------------------+ |
+| fake citations are dropped (warning)           |                          |                      |
+| duplicates removed, order kept                 |                          v                      |
+| chunk_id attached best-effort                  |      +----------------------------------------+ |
+| (keys on (source, page), not chunk_id)         |      | PARSER on retry output                 | |
+| result: Source[] + warnings list               |<-YES-| schema JSON valid ?                    | |
++------------------------------------------------+      +----------------------------------------+ |
+                        |                                                   | NO                   |
+                        v                                                   v                      |
++------------------------------------------------+      +----------------------------------------+ |
+| CONFIDENCE CHECK                               |      | QAResult: RAW FALLBACK                 | |
+| answerable but 0 verified sources ?            |      | fallback_raw=True, sources=[]          | |
+| yes -> confidence=low + warning                |      | confidence=low, no citations           |-+
+| no -> keep LLM confidence                      |      +----------------------------------------+ |
++------------------------------------------------+                                                 |
+                        |                                                                          |
+                        v                                                                          |
++------------------------------------------------+                                                 |
+| QAResult: validated answer                     |                                                 |
+| used_context=True fallback_raw=False           |                                                 |
+| sources[] verified, confidence set             |                                                 |
++------------------------------------------------+                                                 |
+                        |                                                                          |
+                        v                                                                          |
++------------------------------------------------------------------------------------------------+ |
+| ==> PHASE-3 HANDOFF (output): QAResult                                                         | |
+| fields: question, answer, answerable, used_context, confidence, sources,                       | |
+| top_score, threshold, num_retrieved, fallback_raw, warnings                                    |<+
+| arrives from 3 exits: Score Gate NOT FOUND | Raw Fallback | Validated Answer                   |
++------------------------------------------------------------------------------------------------+
+
+[E] ERROR EXIT = LLM call exhausted 4 attempts (429/5xx backoff) -> exception -> CLI exit code 1

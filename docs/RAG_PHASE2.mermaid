@@ -1,0 +1,48 @@
+graph TD
+    IN["INPUT: question, top_k, threshold"]
+    P1["PHASE-1 BOUNDARY: retrieve(question, top_k) from recipe4_retrieve, reused"]
+    FAISS[("FAISS index")]
+    META[("chunks_meta.json")]
+    ENR["_enrich: attach chunk_id (best effort)"]
+    GATE{"SCORE GATE: no results OR top_score below threshold?"}
+    NF["QAResult NOT FOUND: answerable=False, used_context=False, LLM NOT called, sources empty, confidence low"]
+    FMT["format_context: header-label each passage, neutralise context tags (data)"]
+    PRM["build_prompt: system + human turns + parser format_instructions"]
+    LLM1["LLM CALL 1: build_llm lazily, Gemini temp 0.2, backoff on 429/5xx, max 4 attempts"]
+    ERR["ERROR EXIT [E]: CLI exits with code 1"]
+    PARSE{"PARSER: PydanticOutputParser, schema JSON valid?"}
+    RETRY["RETRY ONCE: send parse error back, max 1 retry"]
+    LLM2["LLM CALL 2: same backoff, temp 0.2"]
+    PARSE2{"PARSER on retry output: schema JSON valid?"}
+    RAW["QAResult RAW FALLBACK: fallback_raw=True, sources empty, confidence low, no citations"]
+    VAL["CITATION VALIDATOR: keep only retrieved (source, page) pairs, drop fakes, dedupe, attach chunk_id best-effort"]
+    CONF{"CONFIDENCE CHECK: answerable but 0 verified sources?"}
+    LOW["confidence = low + warning"]
+    OK["QAResult OK: used_context=True, fallback_raw=False, sources verified"]
+    P3["PHASE-3 HANDOFF: QAResult"]
+
+    IN --> P1
+    FAISS --> P1
+    META --> P1
+    P1 --> ENR
+    ENR --> GATE
+    GATE -->|yes| NF
+    GATE -->|no| FMT
+    FMT --> PRM
+    PRM --> LLM1
+    LLM1 -->|failed 4 attempts| ERR
+    LLM1 -->|reply received| PARSE
+    PARSE -->|yes| VAL
+    PARSE -->|no| RETRY
+    RETRY --> LLM2
+    LLM2 -->|failed 4 attempts| ERR
+    LLM2 -->|reply received| PARSE2
+    PARSE2 -->|yes| VAL
+    PARSE2 -->|no| RAW
+    VAL --> CONF
+    CONF -->|yes| LOW
+    CONF -->|no| OK
+    LOW --> OK
+    NF --> P3
+    RAW --> P3
+    OK --> P3

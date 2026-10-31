@@ -1,0 +1,62 @@
+@startuml
+title Phase-2 Q&A Brain - Architecture (Phase-1 retrieval to Phase-3 handoff)
+start
+:INPUT: question, top_k, threshold;
+:PHASE-1 BOUNDARY: retrieve(question, top_k) from recipe4_retrieve, reused
+reads FAISS index and chunks_meta.json
+returns list of rank, score, source, page, text;
+:_enrich: attach chunk_id (best effort);
+if (SCORE GATE: no results OR top_score below threshold?) then (yes)
+  :QAResult NOT FOUND
+  answerable=False, used_context=False
+  LLM NOT called, sources empty, confidence low;
+else (no)
+  :format_context: header-label each passage
+  neutralise context tags (data);
+  :build_prompt: system + human turns
+  + parser format_instructions;
+  :LLM CALL 1: build_llm lazily, Gemini temp 0.2
+  backoff on 429/5xx, max 4 attempts;
+  if (LLM failed after 4 attempts?) then (yes)
+    :ERROR EXIT [E]
+    CLI exits with code 1;
+    stop
+  endif
+  if (PARSER: PydanticOutputParser, schema JSON valid?) then (yes)
+    :parsed = first reply;
+  else (no)
+    :RETRY ONCE: send parse error back
+    max 1 retry;
+    :LLM CALL 2: same backoff, temp 0.2;
+    if (LLM failed after 4 attempts?) then (yes)
+      :ERROR EXIT [E]
+      CLI exits with code 1;
+      stop
+    endif
+    if (PARSER on retry output: schema JSON valid?) then (yes)
+      :parsed = retry reply;
+    else (no)
+      :parsed = none;
+    endif
+  endif
+  if (parsed available?) then (yes)
+    :CITATION VALIDATOR
+    keep only retrieved (source, page) pairs
+    drop fakes, dedupe, attach chunk_id best-effort;
+    if (CONFIDENCE CHECK: answerable but 0 verified sources?) then (yes)
+      :confidence = low + warning;
+    endif
+    :QAResult OK
+    used_context=True, fallback_raw=False
+    sources verified;
+  else (no)
+    :QAResult RAW FALLBACK
+    fallback_raw=True, sources empty
+    confidence low, no citations;
+  endif
+endif
+:PHASE-3 HANDOFF: QAResult
+fields: question, answer, answerable, used_context, confidence, sources
+top_score, threshold, num_retrieved, fallback_raw, warnings;
+stop
+@enduml

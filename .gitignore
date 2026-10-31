@@ -1,0 +1,16 @@
+# Secrets
+.env
+
+# Virtual Environment
+venv/
+.venv/
+
+# Data & Indexes (Optional: keep index/ if you want the PDF to be pre-loaded)
+data/
+index/
+logs/
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
