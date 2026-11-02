@@ -1,4 +1,4 @@
-# Omni-RAG-Agent
+# Omni-RAG-Agent (link - https://omni-rag-agent-1.onrender.com)
 A fully autonomous, multimodal RAG (Retrieval-Augmented Generation) agent. 
 
 I read PDFs, OCR images, scrape web links, and execute actions (file expenses, manage a mock shopping cart) via natural language. I am built with LangChain, LangGraph, Gemini 2.5 Flash, FAISS, and Gradio.
