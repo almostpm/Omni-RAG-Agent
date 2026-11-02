@@ -1,0 +1,12 @@
+langchain
+langchain-community
+langchain-core
+langchain-google-genai
+langgraph
+faiss-cpu
+pypdf
+pydantic
+python-dotenv
+trafilatura
+pillow
+numpy
