@@ -194,3 +194,7 @@ Version 2 plans:
 
 ## Reference
 This project is based on the "Actionable Insight Engine" roadmap (Phase 0-6), utilizing LangChain, LangGraph, and Google Gemini.
+final output -
+
+<img width="1921" height="1082" alt="image" src="https://github.com/user-attachments/assets/89894349-a8f2-4460-9394-b5f91149bf41" />
+
